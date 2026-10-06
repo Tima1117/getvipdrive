@@ -30,7 +30,8 @@ function InkMask({ hostRef, active }: { hostRef: React.RefObject<HTMLElement | n
   const dims = useRef({ w: 0, h: 0 });
   const idleTimer = useRef<number | null>(null);
   const brush = useRef(150);
-  const lifetime = 1500;
+  const lifetime = useRef(4200);
+  const stampStep = useRef(12);
 
   useEffect(() => {
     const canvas = canvasRef.current; const host = hostRef.current;
@@ -43,7 +44,9 @@ function InkMask({ hostRef, active }: { hostRef: React.RefObject<HTMLElement | n
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       const r = host.getBoundingClientRect();
       dims.current = { w: r.width, h: r.height };
-      brush.current = r.width < 760 ? 105 : 150;
+      brush.current = r.width < 760 ? 110 : 160;
+      lifetime.current = r.width < 760 ? 3200 : 4200;
+      stampStep.current = r.width < 760 ? 16 : 12;
       canvas.width = Math.round(r.width * dpr); canvas.height = Math.round(r.height * dpr);
       canvas.style.width = `${r.width}px`; canvas.style.height = `${r.height}px`;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -73,25 +76,27 @@ function InkMask({ hostRef, active }: { hostRef: React.RefObject<HTMLElement | n
       ctx.fillStyle = `rgb(${mc[0]},${mc[1]},${mc[2]})`; ctx.fillRect(0, 0, w, h);
       ctx.globalCompositeOperation = "destination-out";
       for (let i = s.length - 1; i >= 0; i--) {
-        const t = (now - s[i].born) / lifetime;
+        const t = (now - s[i].born) / lifetime.current;
         if (t >= 1) { s.splice(i, 1); continue; }
-        const ease = 1 - Math.pow(1 - t, 3);
+        const g = Math.min(1, t / 0.22);
+        const ease = 1 - Math.pow(1 - g, 3);
         const r = 10 + (s[i].rmax - 10) * ease;
-        const alpha = 1 - t * t * t;
+        const f = Math.max(0, (t - 0.6) / 0.4);
+        const alpha = 1 - f * f * (3 - 2 * f);
         carve(s[i].x, s[i].y, r, s[i].seed, alpha);
       }
       if (s.length) requestAnimationFrame(loop); else running.current = false;
     };
     const start = () => { if (!running.current) { running.current = true; requestAnimationFrame(loop); } };
     const add = (x: number, y: number, k = 1) => {
-      const s = stamps.current; if (s.length >= 220) s.shift();
+      const s = stamps.current; if (s.length >= 900) s.shift();
       s.push({ x, y, born: performance.now(), seed: Math.random() * Math.PI * 2, rmax: brush.current * k * (0.6 + Math.random() * 0.45) });
     };
     const along = (x: number, y: number, k = 1) => {
       const l = last.current;
       if (!l) add(x, y, k);
       else {
-        const dx = x - l.x, dy = y - l.y, dist = Math.hypot(dx, dy), steps = Math.max(1, Math.ceil(dist / 12));
+        const dx = x - l.x, dy = y - l.y, dist = Math.hypot(dx, dy), steps = Math.max(1, Math.ceil(dist / stampStep.current));
         for (let i = 1; i <= steps; i++) add(l.x + (dx * i) / steps, l.y + (dy * i) / steps, k);
       }
       last.current = { x, y }; start();
